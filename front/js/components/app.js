@@ -4,8 +4,8 @@ const appComponent = {
     messageService: null,
     async init(renderer) {
         try {
-            this.renderer = renderer()
-            
+            this.renderer = renderer.render()
+            this.renderer.container.innerText = "renderer works"
         } catch (e) {
             this.handleError(e)
         }

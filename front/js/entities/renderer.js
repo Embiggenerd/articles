@@ -15,10 +15,6 @@ const container = {
     },
 }
 
-const render =() => {
-
-}
-
 /**
  * @type {import("../../types").Render}
  */
@@ -33,7 +29,11 @@ const render = () => {
         throw new Error('failed to create container element')
     }
     root.append(containerElement)
-
+    return {
+        container: containerElement
+    }
 }
 
-export default render
+export default {
+    render
+}
