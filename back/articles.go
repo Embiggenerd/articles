@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -18,6 +19,24 @@ import (
 // 	ConsumerKey    = "X_CONSUMER_KEY"
 // 	ConsumerSecret = "X_CONSUMER_SECRET"
 // )
+
+type Person struct {
+	Name string `json:"name"`
+	Age  int    `json:"age"`
+}
+
+func apiHandler(w http.ResponseWriter, r *http.Request) {
+	person := Person{Name: "John", Age: 30}
+
+	// Encoding - One step
+	jsonStr, err := json.Marshal(person)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(jsonStr)
+}
 
 func serveHome(w http.ResponseWriter, r *http.Request) {
 	// ctx := r.Context()
@@ -37,8 +56,11 @@ func serveHome(w http.ResponseWriter, r *http.Request) {
 
 func Run() {
 	mux := http.NewServeMux()
+	fs := http.FileServer(http.Dir("../front"))
+	mux.Handle("/", fs)
+	mux.HandleFunc("/api", apiHandler)
 
-	mux.HandleFunc("/", serveHome)
+	// mux.HandleFunc("/", serveHome)
 	// mux.HandleFunc("/ws", s.serveWS)
 
 	// withMW := s.log.LoggingMW(mux)
@@ -107,7 +129,7 @@ func main() {
 
 	// fmt.Println("Server listening on :8080")
 	// http.HandleFunc("/api", homeHandler)
-	http.HandleFunc("/", serveHome)
+	// http.HandleFunc("/", serveHome)
 
 	Run()
 }
