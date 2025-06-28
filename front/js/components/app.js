@@ -6,7 +6,7 @@ const appComponent = {
         try {
             this.renderer = renderer.render()
             // this.renderer.container.innerText = "renderer works"
-            const resp = await fetch("/api")
+            const resp = await fetch("/api/")
             const data = await resp.json()
             console.log({data})
             this.renderer.container.innerText = `Api call test: ${data.name}`

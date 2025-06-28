@@ -58,7 +58,7 @@ func Run() {
 	mux := http.NewServeMux()
 	fs := http.FileServer(http.Dir("../front"))
 	mux.Handle("/", fs)
-	mux.HandleFunc("/api", apiHandler)
+	mux.HandleFunc("/api/", apiHandler)
 
 	// mux.HandleFunc("/", serveHome)
 	// mux.HandleFunc("/ws", s.serveWS)
