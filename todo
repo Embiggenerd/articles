@@ -1,1 +1,8 @@
 1. tests passing for local and prod frontend and api setup.
+2. frontend bubbles working for paragraphs
+  1. bubble works creating paragraph
+  2. bubble can point to other bubble
+3. bubbles persist with text
+  1. creating a bubble creates a db table
+  2. adding text to bubble persists text
+4. text is live coded
