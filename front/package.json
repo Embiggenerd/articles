@@ -2,9 +2,21 @@
   "name": "front",
   "version": "1.0.0",
   "description": "web frontend for articles app",
-  "main": "main.js",
   "license": "MIT",
   "devDependencies": {
+    "sass-embedded": "^1.89.2",
     "vite": "^7.0.5"
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "scripts": {
+    "start": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 5002",
+    "build:preview": "yarn build && yarn preview",
+    "build:packages": "yarn --cwd ../../ build:packages"
   }
 }

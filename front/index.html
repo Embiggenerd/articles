@@ -7,6 +7,13 @@
         <link rel="stylesheet" href="style/home.css" type="text/css" />
     </head>
     <body id="root">
+        <p>This should appear no matter what</p>
     </body>
+    <script type="module">
+        import * as ExcalidrawLib from "@excalidraw/excalidraw";
+            console.log("hihihi");
+        console.log(ExcalidrawLib);
+        window.ExcalidrawLib = ExcalidrawLib;
+    </script>
     <script type="module" src="js/main.js"></script>
 </html>

@@ -1,4 +1,9 @@
-1. tests passing for local and prod frontend and api setup.
-2. vite working 
-  a. dev
-  b. prod
+1. tests passing for local and prod frontend and api setup. √
+2. vite working √
+  a. dev √
+  b. prod √
+3. excalidraw
+  a. dev frontend
+  b. dev data
+  c. prod frontend
+  d. prod data

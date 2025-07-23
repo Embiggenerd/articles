@@ -1,6 +1,11 @@
+
+import * as draw from '../components/draw.tsx'
+
 /**
  * @type {import("../../types").ContainerHelper}
  */
+
+
 const container = {
     id: 'container',
     type: 'div',
@@ -23,12 +28,15 @@ const render = () => {
     if (!root) {
         throw new Error('no root to latch onto')
     }
-    // Render chat area
     const containerElement = container.create()
     if (!containerElement) {
         throw new Error('failed to create container element')
     }
+
+    console.log("hihihi");
+    console.log(ExcalidrawLib);
     root.append(containerElement)
+
     return {
         container: containerElement
     }
