@@ -57,43 +57,48 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(jsonStr)
 }
 
-func serveHome(w http.ResponseWriter, r *http.Request) {
+func serveStatic() http.Handler {
 	// ctx := r.Context()
 	// reqID, _ := utils.ExposeContextMetadata(ctx).Get("requestID")
 	// if r.URL.Path != "/" {
 	// 	// s.log.LogRequestError(reqID.(string), "Not found", http.StatusNotFound)
 	// 	http.Error(w, "Not found", http.StatusNotFound)
 	// 	return
+	fmt.Println("we are serving static files")
 	// }
-	if r.Method != http.MethodGet {
-		// s.log.LogRequestError(reqID.(string), "Method not allowed", http.StatusMethodNotAllowed)
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	http.ServeFile(w, r, "../front/index.html")
+	// if r.Method != http.MethodGet {
+	// 	// s.log.LogRequestError(reqID.(string), "Method not allowed", http.StatusMethodNotAllowed)
+	// 	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	// 	return
+	// }
+	// http.ServeFile(w, r, "../front/dist/index.html")
+	return http.FileServer(http.Dir("../front/dist"))
 }
 
-func Run() {
+func Run(cfg Config) {
 	mux := http.NewServeMux()
+	var frontendHandler http.HandlerFunc = http.FileServer(http.Dir("../front/dist")).ServeHTTP
 	// fs := http.FileServer(http.Dir("../front"))
-	viteURL, _ := url.Parse("http://localhost:3001") // Replace with your Vite dev server URL
-	proxy := httputil.NewSingleHostReverseProxy(viteURL)
-	// http.Handle("/", proxy)
+	if cfg.GOENV == "dev" {
+		// viteURL, _ := url.Parse("http://localhost:3001") // Replace with your Vite dev server URL
+		// proxy := httputil.NewSingleHostReverseProxy(viteURL)
+		// http.Handle("/", proxy)
 
-	// http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-	// 	proxy.ServeHTTP(w, r)
-	// })
+		// http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// 	proxy.ServeHTTP(w, r)
+		// })
 
-	log.Println("Proxying requests to Vite dev server on port 8080")
-	// log.Fatal(http.ListenAndServe(":8080", nil))
-	// mux.Handle("/", fs)
-	proxy, err := NewProxy("http://localhost:3001")
-	if err != nil {
-		panic(err)
+		log.Println("Proxying requests to Vite dev server on port 8080")
+		// log.Fatal(http.ListenAndServe(":8080", nil))
+		// mux.Handle("/", fs)
+		proxy, err := NewProxy("http://localhost:3001")
+		if err != nil {
+			panic(err)
+		}
+		frontendHandler = ProxyRequestHandler(proxy)
+		// handle all requests to your server using the proxy
 	}
-
-	// handle all requests to your server using the proxy
-	mux.HandleFunc("/", ProxyRequestHandler(proxy))
+	mux.HandleFunc("/", frontendHandler)
 	mux.HandleFunc("/api/", apiHandler)
 
 	// mux.HandleFunc("/", serveHome)
@@ -116,6 +121,7 @@ func Run() {
 type Config struct {
 	XConsumerKey    string
 	XConsumerSecret string
+	GOENV           string
 }
 
 func LoadConfig() (Config, error) {
@@ -124,6 +130,7 @@ func LoadConfig() (Config, error) {
 	cfg := Config{
 		XConsumerKey:    os.Getenv("X_CONSUMER_KEY"),
 		XConsumerSecret: os.Getenv("X_CONSUMER_SECRET"),
+		GOENV:           os.Getenv("GOENV"),
 	}
 
 	return cfg, err
@@ -167,5 +174,5 @@ func main() {
 	// http.HandleFunc("/api", homeHandler)
 	// http.HandleFunc("/", serveHome)
 
-	Run()
+	Run(cfg)
 }

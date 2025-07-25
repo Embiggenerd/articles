@@ -26,7 +26,7 @@ const elements: ExcalidrawElementSkeleton[] = [
     type: "arrow",
     x: 100,
     y: 200,
-    label: { text: "HELLO WORLD!" },
+    label: { text: "Hi WORLD!!" },
     start: { type: "rectangle" },
     end: { type: "ellipse" },
   },
