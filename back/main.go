@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -10,21 +12,115 @@ import (
 	"net/url"
 	"os"
 
+	"github.com/Embiggenerd/articles/core"
+	"github.com/Embiggenerd/articles/stores"
+	"github.com/go-chi/render"
+
 	"github.com/joho/godotenv"
 )
 
-// twitterLogin "github.com/dghubble/gologin/v2/twitter"
-// "github.com/dghubble/oauth1"
+// package documents
 
-// Define your Consumer Key and Consumer Secret
-// const (
-// 	ConsumerKey    = "X_CONSUMER_KEY"
-// 	ConsumerSecret = "X_CONSUMER_SECRET"
-// )
+type (
+	DocumentCreateResponse struct {
+		ID string `json:"id"`
+	}
+	UserCreateResponse struct {
+		ID string `json:"id"`
+	}
 
-type Person struct {
-	Name string `json:"name"`
-	Age  int    `json:"age"`
+	UserLoginResponse struct {
+		ID       string `json:"id,omitempty"`
+		Email    string `json:"email,omitempty"`
+		Username string `json:"username,omitempty"`
+	}
+	UserCreateRequest struct {
+		Email    string
+		Password string
+	}
+)
+
+func HandleCreateDocument(documentStore core.DocumentStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		data := new(bytes.Buffer)
+		_, err := io.Copy(data, r.Body)
+		if err != nil {
+			http.Error(w, "Failed to copy", http.StatusInternalServerError)
+			return
+		}
+		id, err := documentStore.Create(r.Context(), &core.Document{Data: *data})
+		if err != nil {
+			http.Error(w, "Failed to save", http.StatusInternalServerError)
+			return
+		}
+
+		render.JSON(w, r, DocumentCreateResponse{ID: id})
+		render.Status(r, http.StatusOK)
+	}
+}
+
+func HandleCreateUser(userStore core.UserStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var userReq UserCreateRequest
+		err := json.NewDecoder(r.Body).Decode(&userReq)
+		if err != nil {
+			http.Error(w, "Failed to read", http.StatusInternalServerError)
+			return
+		}
+
+		id, err := userStore.Create(r.Context(), &core.User{Email: userReq.Email, Password: userReq.Password})
+		if err != nil {
+			http.Error(w, "Failed to save", http.StatusInternalServerError)
+			return
+		}
+
+		render.JSON(w, r, UserCreateResponse{ID: id})
+		render.Status(r, http.StatusOK)
+	}
+}
+
+func HandleLoginUser(userStore core.UserStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// data := new(bytes.Buffer)
+		// _, err := io.Copy(data, r.Body)
+		// if err != nil {
+		// 	http.Error(w, "Failed to copy", http.StatusInternalServerError)
+		// 	return
+		// }
+
+		var user core.User
+		// err = binary.Read(data, binary.LittleEndian, &user)
+		err := json.NewDecoder(r.Body).Decode(&user)
+		if err != nil {
+			http.Error(w, "Failed to read", http.StatusInternalServerError)
+			return
+		}
+
+		authenticated, foundUser, err := userStore.FindEmailAndAuthenticate(r.Context(), user.Email, user.Password)
+		if err != nil || !authenticated {
+			http.Error(w, "Failed to authenticate", http.StatusUnauthorized)
+			return
+		}
+
+		render.JSON(w, r, UserLoginResponse{
+			ID:       foundUser.ID,
+			Email:    foundUser.Email,
+			Username: foundUser.UserName,
+		})
+		render.Status(r, http.StatusOK)
+	}
+}
+
+func HandleGetDocument(documentStore core.DocumentStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("id")
+		document, err := documentStore.FindID(r.Context(), id)
+		if err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		w.Write(document.Data.Bytes())
+	}
 }
 
 // NewProxy takes target host and creates a reverse proxy
@@ -44,53 +140,12 @@ func ProxyRequestHandler(proxy *httputil.ReverseProxy) func(http.ResponseWriter,
 	}
 }
 
-func apiHandler(w http.ResponseWriter, r *http.Request) {
-	person := Person{Name: "John", Age: 30}
-
-	// Encoding - One step
-	jsonStr, err := json.Marshal(person)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Write(jsonStr)
-}
-
-func serveStatic() http.Handler {
-	// ctx := r.Context()
-	// reqID, _ := utils.ExposeContextMetadata(ctx).Get("requestID")
-	// if r.URL.Path != "/" {
-	// 	// s.log.LogRequestError(reqID.(string), "Not found", http.StatusNotFound)
-	// 	http.Error(w, "Not found", http.StatusNotFound)
-	// 	return
-	fmt.Println("we are serving static files")
-	// }
-	// if r.Method != http.MethodGet {
-	// 	// s.log.LogRequestError(reqID.(string), "Method not allowed", http.StatusMethodNotAllowed)
-	// 	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	// 	return
-	// }
-	// http.ServeFile(w, r, "../front/dist/index.html")
-	return http.FileServer(http.Dir("../front/dist"))
-}
-
 func Run(cfg Config) {
 	mux := http.NewServeMux()
 	var frontendHandler http.HandlerFunc = http.FileServer(http.Dir("../front/dist")).ServeHTTP
-	// fs := http.FileServer(http.Dir("../front"))
 	if cfg.GOENV == "dev" {
-		// viteURL, _ := url.Parse("http://localhost:3001") // Replace with your Vite dev server URL
-		// proxy := httputil.NewSingleHostReverseProxy(viteURL)
-		// http.Handle("/", proxy)
 
-		// http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// 	proxy.ServeHTTP(w, r)
-		// })
-
-		log.Println("Proxying requests to Vite dev server on port 8080")
-		// log.Fatal(http.ListenAndServe(":8080", nil))
-		// mux.Handle("/", fs)
+		log.Println("Proxying requests to Vite dev server on port 9090")
 		proxy, err := NewProxy("http://localhost:3001")
 		if err != nil {
 			panic(err)
@@ -98,20 +153,19 @@ func Run(cfg Config) {
 		frontendHandler = ProxyRequestHandler(proxy)
 		// handle all requests to your server using the proxy
 	}
+	store := stores.GetStore()
 	mux.HandleFunc("/", frontendHandler)
-	mux.HandleFunc("/api/", apiHandler)
+	// mux.HandleFunc("/api/", apiHandler)
+	mux.HandleFunc("/api/document/get", HandleGetDocument(store.Documents))
+	mux.HandleFunc("/api/document/post", HandleCreateDocument(store.Documents))
 
-	// mux.HandleFunc("/", serveHome)
-	// mux.HandleFunc("/ws", s.serveWS)
-
-	// withMW := s.log.LoggingMW(mux)
+	mux.HandleFunc("/api/user/create", HandleCreateUser(store.Users))
+	mux.HandleFunc("/api/user/login", HandleLoginUser(store.Users))
 
 	l, err := net.Listen("tcp", ":9090")
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-
-	// log.Info("server listening on port " + s.server.Addr)
 
 	if err := http.Serve(l, mux); err != nil {
 		log.Fatal(err.Error())
@@ -139,40 +193,5 @@ func LoadConfig() (Config, error) {
 func main() {
 	cfg, err := LoadConfig()
 	fmt.Println(err)
-
-	fmt.Printf("%+v\n", cfg)
-
-	// OAuth1 Config for Twitter
-	// oauth1Config := &oauth1.Config{
-	// 	ConsumerKey:    ConsumerKey,
-	// 	ConsumerSecret: ConsumerSecret,
-	// 	CallbackURL:    "http://localhost:8080/twitter/callback",
-	// 	Endpoint:       oauth1.TwitterEndpoint,
-	// }
-
-	// // Success handler for authenticated users
-	// successHandler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-	// 	ctx := req.Context()
-	// 	twitterUser, err := twitterLogin.UserFromContext(ctx)
-	// 	if err != nil {
-	// 		http.Error(w, "Failed to get Twitter user from context", http.StatusInternalServerError)
-	// 		return
-	// 	}
-	// 	fmt.Fprintf(w, "Welcome, %s!", twitterUser.ScreenName)
-	// })
-
-	// // Failure handler for authentication errors
-	// failureHandler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-	// 	fmt.Fprintln(w, "Twitter login failed.")
-	// })
-
-	// // Setup routes
-	// http.Handle("/twitter/login", twitterLogin.LoginHandler(oauth1Config, nil))
-	// http.Handle("/twitter/callback", twitterLogin.CallbackHandler(oauth1Config, successHandler, failureHandler))
-
-	// fmt.Println("Server listening on :8080")
-	// http.HandleFunc("/api", homeHandler)
-	// http.HandleFunc("/", serveHome)
-
 	Run(cfg)
 }
