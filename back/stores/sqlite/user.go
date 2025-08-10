@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/Embiggenerd/articles/core"
 	"golang.org/x/crypto/bcrypt"
@@ -14,19 +15,22 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var savedUser = make(map[string]core.User)
-
 type userStore struct {
 	db *sql.DB
 }
 
 func NewUserStore(dataSourceName string) core.UserStore {
-	// db, err := sql.Open("sqlite3", ":memory:")
-	db, err := sql.Open("sqlite3", dataSourceName)
+	dirPath := "../data" // Path to the directory you want to create
+	err := os.MkdirAll(dirPath, os.ModePerm)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err.Error())
 	}
-	sts := `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT, password TEXT, email TEXT);`
+
+	db, err := sql.Open("sqlite3", dirPath+"/"+dataSourceName)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	sts := `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT, password TEXT NOT NULL, email TEXT UNIQUE NOT NULL);`
 	_, err = db.Exec(sts)
 	if err != nil {
 		log.Fatal(err)
@@ -47,9 +51,6 @@ func (s *userStore) FindID(ctx context.Context, id string) (*core.User, error) {
 		log.WithField("error", err).Error("Failed to retrieve user")
 		return nil, err
 	}
-	// user := core.User{
-	// 	Data: *bytes.NewBuffer(data),
-	// }
 	log.Info("user retrieved successfully")
 	return &user, nil
 }
@@ -67,9 +68,6 @@ func (s *userStore) FindEmail(ctx context.Context, email string) (*core.User, er
 		log.WithField("error", err).Error("Failed to retrieve user")
 		return nil, err
 	}
-	// user := core.User{
-	// 	Data: *bytes.NewBuffer(data),
-	// }
 	log.Info("user retrieved successfully")
 	return &user, nil
 }
@@ -112,7 +110,7 @@ func (s *userStore) FindEmailAndAuthenticate(ctx context.Context, email, passwor
 }
 
 func hashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 10)
 	return string(bytes), err
 }
 

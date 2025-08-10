@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -10,16 +12,27 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"os"
 
+	"github.com/Embiggenerd/articles/config"
 	"github.com/Embiggenerd/articles/core"
+	"github.com/Embiggenerd/articles/logger"
 	"github.com/Embiggenerd/articles/stores"
 	"github.com/go-chi/render"
-
-	"github.com/joho/godotenv"
+	"github.com/mattn/go-sqlite3"
+	"golang.org/x/crypto/bcrypt"
 )
 
-// package documents
+var secretKey = []byte("secret-key")
+
+func createToken(secret string) (string, error) {
+	bytes, err := bcrypt.GenerateFromPassword([]byte(secret), 14)
+	return string(bytes), err
+}
+
+func verifyToken(secret, token string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(token), []byte(secret))
+	return err == nil
+}
 
 type (
 	DocumentCreateResponse struct {
@@ -35,8 +48,13 @@ type (
 		Username string `json:"username,omitempty"`
 	}
 	UserCreateRequest struct {
-		Email    string
-		Password string
+		Email    string `json:"email,omitempty"`
+		Password string `json:"password,omitempty"`
+	}
+
+	CookieValue struct {
+		User   core.User
+		Secret string
 	}
 )
 
@@ -64,13 +82,19 @@ func HandleCreateUser(userStore core.UserStore) http.HandlerFunc {
 		var userReq UserCreateRequest
 		err := json.NewDecoder(r.Body).Decode(&userReq)
 		if err != nil {
-			http.Error(w, "Failed to read", http.StatusInternalServerError)
+			http.Error(w, "Failed to read request body", http.StatusBadRequest)
 			return
 		}
 
 		id, err := userStore.Create(r.Context(), &core.User{Email: userReq.Email, Password: userReq.Password})
 		if err != nil {
-			http.Error(w, "Failed to save", http.StatusInternalServerError)
+			if sqlite3Err, ok := err.(sqlite3.Error); ok {
+				if sqlite3Err.ExtendedCode == sqlite3.ErrConstraintUnique {
+					http.Error(w, "User already exists", http.StatusConflict)
+					return
+				}
+			}
+			http.Error(w, "Failed to create user", http.StatusInternalServerError)
 			return
 		}
 
@@ -79,28 +103,43 @@ func HandleCreateUser(userStore core.UserStore) http.HandlerFunc {
 	}
 }
 
-func HandleLoginUser(userStore core.UserStore) http.HandlerFunc {
+func HandleLoginUser(userStore core.UserStore, cfg config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// data := new(bytes.Buffer)
-		// _, err := io.Copy(data, r.Body)
-		// if err != nil {
-		// 	http.Error(w, "Failed to copy", http.StatusInternalServerError)
-		// 	return
-		// }
-
 		var user core.User
-		// err = binary.Read(data, binary.LittleEndian, &user)
 		err := json.NewDecoder(r.Body).Decode(&user)
 		if err != nil {
 			http.Error(w, "Failed to read", http.StatusInternalServerError)
 			return
 		}
 
+		// Check password matches hashed value stored in DB
 		authenticated, foundUser, err := userStore.FindEmailAndAuthenticate(r.Context(), user.Email, user.Password)
 		if err != nil || !authenticated {
 			http.Error(w, "Failed to authenticate", http.StatusUnauthorized)
 			return
 		}
+
+		// Create a cookie token we can decrypt later
+		token, err := createToken(cfg.Get(cfg.AuthSecret))
+		if err != nil {
+			http.Error(w, "Failed to write", http.StatusInternalServerError)
+			return
+		}
+
+		cookie := http.Cookie{
+			Name:     "exampleCookie",
+			Value:    token,
+			Path:     "/",
+			MaxAge:   3600,
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
+		}
+
+		// Use the http.SetCookie() function to send the cookie to the client.
+		// Behind the scenes this adds a `Set-Cookie` header to the response
+		// containing the necessary cookie data.
+		http.SetCookie(w, &cookie)
 
 		render.JSON(w, r, UserLoginResponse{
 			ID:       foundUser.ID,
@@ -140,10 +179,34 @@ func ProxyRequestHandler(proxy *httputil.ReverseProxy) func(http.ResponseWriter,
 	}
 }
 
-func Run(cfg Config) {
+func HandleProtected(cfg config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("exampleCookie")
+		if err != nil {
+			switch {
+			case errors.Is(err, http.ErrNoCookie):
+				http.Error(w, "cookie not found", http.StatusBadRequest)
+			default:
+				log.Println(err)
+				http.Error(w, "server error", http.StatusInternalServerError)
+			}
+			return
+		}
+
+		verified := verifyToken(cfg.Get(cfg.AuthSecret), cookie.Value)
+		if !verified {
+			http.Error(w, "Failed to authenticate", http.StatusUnauthorized)
+			return
+		}
+
+		w.Write([]byte(cookie.Value))
+	}
+}
+
+func Run(cfg config.Config, logr logger.Logger) {
 	mux := http.NewServeMux()
 	var frontendHandler http.HandlerFunc = http.FileServer(http.Dir("../front/dist")).ServeHTTP
-	if cfg.GOENV == "dev" {
+	if cfg.Get(cfg.GoEnv) == "dev" {
 
 		log.Println("Proxying requests to Vite dev server on port 9090")
 		proxy, err := NewProxy("http://localhost:3001")
@@ -153,45 +216,31 @@ func Run(cfg Config) {
 		frontendHandler = ProxyRequestHandler(proxy)
 		// handle all requests to your server using the proxy
 	}
-	store := stores.GetStore()
+	store := stores.GetStore(cfg)
 	mux.HandleFunc("/", frontendHandler)
 	// mux.HandleFunc("/api/", apiHandler)
 	mux.HandleFunc("/api/document/get", HandleGetDocument(store.Documents))
 	mux.HandleFunc("/api/document/post", HandleCreateDocument(store.Documents))
 
 	mux.HandleFunc("/api/user/create", HandleCreateUser(store.Users))
-	mux.HandleFunc("/api/user/login", HandleLoginUser(store.Users))
+	mux.HandleFunc("/api/user/login", HandleLoginUser(store.Users, cfg))
+	mux.HandleFunc("/api/protected", HandleProtected(cfg))
 
-	l, err := net.Listen("tcp", ":9090")
+	listener, err := net.Listen("tcp", ":9090")
 	if err != nil {
 		log.Fatal(err.Error())
 	}
 
-	if err := http.Serve(l, mux); err != nil {
+	withMW := logr.LoggingMW(mux)
+
+	if err := http.Serve(listener, withMW); err != nil {
 		log.Fatal(err.Error())
 	}
 }
 
-type Config struct {
-	XConsumerKey    string
-	XConsumerSecret string
-	GOENV           string
-}
-
-func LoadConfig() (Config, error) {
-	err := godotenv.Load()
-
-	cfg := Config{
-		XConsumerKey:    os.Getenv("X_CONSUMER_KEY"),
-		XConsumerSecret: os.Getenv("X_CONSUMER_SECRET"),
-		GOENV:           os.Getenv("GOENV"),
-	}
-
-	return cfg, err
-}
-
 func main() {
-	cfg, err := LoadConfig()
-	fmt.Println(err)
-	Run(cfg)
+	cfg := config.LoadConfig()
+	log := logger.NewLoggerService(context.Background(), &cfg)
+	fmt.Println("hihihi", log)
+	Run(cfg, log)
 }

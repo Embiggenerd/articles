@@ -1,8 +1,7 @@
 package stores
 
 import (
-	"os"
-
+	"github.com/Embiggenerd/articles/config"
 	"github.com/Embiggenerd/articles/core"
 
 	"github.com/Embiggenerd/articles/stores/sqlite"
@@ -15,8 +14,8 @@ type Store struct {
 	Users     core.UserStore
 }
 
-func GetStore() Store {
-	storageType := os.Getenv("STORAGE_TYPE")
+func GetStore(cfg config.Config) Store {
+	storageType := cfg.Get(cfg.StorageType)
 	store := Store{}
 
 	storageField := logrus.Fields{
@@ -24,23 +23,11 @@ func GetStore() Store {
 	}
 
 	switch storageType {
-	// case "filesystem":
-	// 	basePath := os.Getenv("LOCAL_STORAGE_PATH")
-	// 	storageField["basePath"] = basePath
-	// 	store = filesystem.NewDocumentStore(basePath)
 	case "sqlite":
-		// dataSourceName := os.Getenv("DATA_SOURCE_NAME")
-		dataSourceName := "test.sqlite"
+		dataSourceName := cfg.Get(cfg.DataSourceName)
 		storageField["dataSourceName"] = dataSourceName
 		store.Documents = sqlite.NewDocumentStore(dataSourceName)
 		store.Users = sqlite.NewUserStore(dataSourceName)
-		// case "s3":
-		// 	bucketName := os.Getenv("S3_BUCKET_NAME")
-		// 	storageField["bucketName"] = bucketName
-		// 	store = aws.NewDocumentStore(bucketName)
-		// default:
-		// 	store = memory.NewDocumentStore()
-		// 	storageField["storageType"] = "in-memory"
 	}
 	logrus.WithFields(storageField).Info("Use storage")
 	return store

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/Embiggenerd/articles/core"
 
@@ -14,15 +15,25 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var savedDocuments = make(map[string]core.Document)
-
 type documentStore struct {
 	db *sql.DB
 }
 
 func NewDocumentStore(dataSourceName string) core.DocumentStore {
 	// db, err := sql.Open("sqlite3", ":memory:")
-	db, err := sql.Open("sqlite3", dataSourceName)
+	dirPath := "../data" // Path to the directory you want to create
+
+	// // Define the permissions for the new directory (e.g., 0755 for rwxr-xr-x)
+	// // os.ModePerm is 0777, granting full permissions.
+	// // You can use specific octal values like 0755 for common permissions.
+	permissions := os.ModePerm
+
+	err := os.MkdirAll(dirPath, permissions)
+	if err != nil {
+		fmt.Printf("Error creating directory: %v\n", err)
+		// return
+	}
+	db, err := sql.Open("sqlite3", dirPath+"/"+dataSourceName)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -40,9 +51,6 @@ func (s *documentStore) FindID(ctx context.Context, id string) (*core.Document, 
 	var data []byte
 	err := s.db.QueryRowContext(ctx, "SELECT data FROM documents WHERE id = ?", id).Scan(&data)
 	if err != nil {
-		fmt.Println(err.Error())
-		fmt.Println("with id in find id")
-		fmt.Println(id)
 		if err == sql.ErrNoRows {
 			log.WithField("error", "document not found").Warn("Document with specified ID not found")
 			return nil, fmt.Errorf("document with id %s not found", id)

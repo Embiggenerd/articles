@@ -3,6 +3,8 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 )
 
 type (
@@ -31,3 +33,17 @@ type (
 		FindEmailAndAuthenticate(ctx context.Context, email, password string) (bool, *User, error)
 	}
 )
+
+func (u User) Sanitize() User {
+	u.Password = ""
+	return u
+}
+
+func (u User) ToString() string {
+	json, err := json.Marshal(u.Sanitize())
+	if err != nil {
+		fmt.Println("Error marshaling struct to JSON:", err)
+		return ""
+	}
+	return string(json)
+}
