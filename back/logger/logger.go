@@ -28,14 +28,22 @@ type Logger interface {
 	Info(msg string, args ...any)
 	LoggingMW(next http.Handler) http.Handler
 	LogAPIRequest(id, ip, path, port, method string, timeRecieved time.Time, nanoSeconds int64, statusCode int)
-	LogRequestError(requestID, errorMessage string, statusCode int)
-	logEvent(requestID, metadata, direction, event, data string)
-	LogEventSent(requestID, metadata string, message any)
-	LogEventReceived(requestID, metadata string, message any)
+	LogRequestError(ctx context.Context, requestID, errorMessage string, statusCode int)
+	LogMessageSent(ctx context.Context, message any)
+	LogWorkOrderReceived(ctx context.Context, workOrder any)
+	With(args ...any) Logger
 }
 
-// NewLoggerService creates and returns a new Logger instance
-func NewLoggerService(ctx context.Context, cfg *config.Config) Logger {
+// replaceAttr masks data from requests and metadata from context
+func replaceAttr(_ []string, a slog.Attr) slog.Attr {
+	if a.Key == "data" || a.Key == "metadata" {
+		a = slog.Attr{}
+	}
+	return a
+}
+
+// NewLogger creates and returns a new Logger instance
+func NewLogger(ctx context.Context, cfg *config.Config) Logger {
 	dirPath := "../logs" // Path to the directory you want to create
 
 	// os.ModePerm is 0777, granting full permissions.
@@ -48,16 +56,21 @@ func NewLoggerService(ctx context.Context, cfg *config.Config) Logger {
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	stderr := os.Stderr
 
 	slogger := slog.New(
 		slogmulti.Fanout(
-			slog.NewJSONHandler(file, &slog.HandlerOptions{}),
-			slog.NewTextHandler(stderr, &slog.HandlerOptions{}),
+			slog.NewJSONHandler(file, &slog.HandlerOptions{
+				AddSource: true,
+			}),
+			NewPrettyHandler(&slog.HandlerOptions{
+				Level:       slog.LevelInfo,
+				AddSource:   true,
+				ReplaceAttr: replaceAttr,
+			}),
 		),
 	)
 	logger := &CustomLogger{Logger: slogger}
-	logger.Info("logging service Up")
+	logger.Info("Logging service Up")
 	return logger
 }
 
@@ -66,9 +79,13 @@ type CustomLogger struct {
 	*slog.Logger
 }
 
+func (l *CustomLogger) With(args ...any) Logger {
+	return &CustomLogger{Logger: l.Logger.With(args...)}
+}
+
 // Fatal logs a message and exits
 func (l *CustomLogger) Fatal(msg string) {
-	l.Log(context.TODO(), logFatal, "msg")
+	l.Log(context.TODO(), logFatal, msg)
 	os.Exit(1)
 }
 
@@ -80,14 +97,14 @@ func (l *CustomLogger) LoggingMW(next http.Handler) http.Handler {
 		method := r.Method
 		path := r.URL.EscapedPath()
 		ip, port, _ := net.SplitHostPort(r.RemoteAddr)
-		rw := negroni.NewResponseWriter(w)
+		lrw := negroni.NewResponseWriter(w)
 		newUUID := uuid.New()
 
 		ExposeContextMetadata(ctx).Set("requestID", newUUID.String())
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 
-		statusCode := rw.Status()
+		statusCode := lrw.Status()
 
 		defer func(begin time.Time) {
 			tookMs := time.Since(begin).Nanoseconds()
@@ -101,6 +118,7 @@ func (l *CustomLogger) LogAPIRequest(id, ip, path, port, method string, timeReci
 	if statusCode >= 400 {
 		level = slog.LevelError
 	}
+
 	l.Log(context.TODO(), level, "API Request",
 		slog.String("requestID", id),
 		slog.Int("statusCode", statusCode),
@@ -109,12 +127,13 @@ func (l *CustomLogger) LogAPIRequest(id, ip, path, port, method string, timeReci
 		slog.String("port", port),
 		slog.String("method", method),
 		slog.Int64("nanoSeconds", nanoSeconds),
-		slog.Time("timeReceived", timeRecieved))
+		slog.Time("timeReceived", timeRecieved),
+	)
 }
 
-func (l *CustomLogger) LogRequestError(requestID, errorMessage string, statusCode int) {
+func (l *CustomLogger) LogRequestError(ctx context.Context, requestID, errorMessage string, statusCode int) {
 	l.Log(
-		context.TODO(),
+		ctx,
 		slog.LevelError,
 		"Request Error",
 		slog.String("requestID", requestID),
@@ -123,34 +142,38 @@ func (l *CustomLogger) LogRequestError(requestID, errorMessage string, statusCod
 	)
 }
 
-func (l *CustomLogger) LogEventSent(requestID, metadata string, message any) {
+func (l *CustomLogger) LogMessageSent(ctx context.Context, message any) {
 	d, err := json.Marshal(message)
 	if err != nil {
 		l.Error(err.Error())
 		return
 	}
 
-	l.logEvent(requestID, metadata, "Sent", message.(string), string(d))
+	l.logMessage(ctx, "Sent", message.(string), string(d))
 }
 
-func (l *CustomLogger) LogEventReceived(requestID, metadata string, message any) {
-	d, err := json.Marshal(message)
+func (l *CustomLogger) LogWorkOrderReceived(ctx context.Context, workOrder any) {
+	d, err := json.Marshal(workOrder)
 	if err != nil {
 		l.Error(err.Error())
 		return
 	}
 
-	l.logEvent(requestID, metadata, "Received", message.(string), string(d))
+	l.logMessage(ctx, "Received", workOrder.(string), string(d))
 }
 
-func (l *CustomLogger) logEvent(requestID, metadata, direction, event, data string) {
+func (l *CustomLogger) logMessage(ctx context.Context, direction, messageType, data string) {
+	metadata := ExposeContextMetadata(ctx)
+	metadataJSON := metadata.ToJSON()
+	requestID, _ := metadata.Get("requestID")
+
 	l.Log(
 		context.TODO(),
 		slog.LevelInfo,
 		"Event Message "+direction,
-		slog.String("requestID", requestID),
-		slog.String("event", event),
+		slog.String("requestID", requestID.(string)),
+		slog.String("type", messageType),
 		slog.String("data", data),
-		slog.String("metadata", metadata),
+		slog.String("metadata", metadataJSON),
 	)
 }

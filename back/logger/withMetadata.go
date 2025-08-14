@@ -27,7 +27,7 @@ func ExposeContextMetadata(ctx context.Context) MetadataInterface {
 	return md
 }
 
-func (l *Metadata) Get(key string) (interface{}, error) {
+func (l *Metadata) Get(key string) (any, error) {
 	var err error
 	value, ok := l.metadata[key]
 	if !ok {
@@ -37,7 +37,7 @@ func (l *Metadata) Get(key string) (interface{}, error) {
 }
 
 func (m *Metadata) ToJSON() string {
-	jsonMap := map[string]interface{}{}
+	jsonMap := map[string]any{}
 	for key, val := range m.metadata {
 		jsonMap[key] = val.Value
 	}
@@ -46,7 +46,7 @@ func (m *Metadata) ToJSON() string {
 	return string(b)
 }
 
-func (l *Metadata) Set(key string, val interface{}) {
+func (l *Metadata) Set(key string, val any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	dx := data{Key: key, Value: val}
@@ -59,12 +59,12 @@ type Metadata struct {
 }
 
 type MetadataInterface interface {
-	Set(key string, val interface{})
-	Get(key string) (interface{}, error)
+	Set(key string, val any)
+	Get(key string) (any, error)
 	ToJSON() string
 }
 
 type data struct {
 	Key   string
-	Value interface{}
+	Value any
 }

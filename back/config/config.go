@@ -23,7 +23,7 @@ type value struct {
 	Default string
 }
 
-func LoadConfig() Config {
+func LoadConfig() *Config {
 	godotenv.Load()
 
 	cfg := Config{
@@ -43,7 +43,7 @@ func LoadConfig() Config {
 	cfg.Add(cfg.LogFileName, value{Value: os.Getenv("LOG_FILE_NAME"), Default: cfg.Get(cfg.GoEnv) + ".json"})
 	cfg.Add(cfg.DataSourceName, value{Value: os.Getenv("DATA_SOURCE_NAME"), Default: cfg.Get(cfg.GoEnv) + ".sqlite"})
 
-	return cfg
+	return &cfg
 }
 
 func (c Config) Get(name string) string {

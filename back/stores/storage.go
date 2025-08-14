@@ -1,8 +1,11 @@
 package stores
 
 import (
+	"context"
+
 	"github.com/Embiggenerd/articles/config"
 	"github.com/Embiggenerd/articles/core"
+	"github.com/Embiggenerd/articles/logger"
 
 	"github.com/Embiggenerd/articles/stores/sqlite"
 
@@ -14,7 +17,7 @@ type Store struct {
 	Users     core.UserStore
 }
 
-func GetStore(cfg config.Config) Store {
+func GetStores(ctx context.Context, cfg *config.Config, log logger.Logger) Store {
 	storageType := cfg.Get(cfg.StorageType)
 	store := Store{}
 
@@ -29,6 +32,7 @@ func GetStore(cfg config.Config) Store {
 		store.Documents = sqlite.NewDocumentStore(dataSourceName)
 		store.Users = sqlite.NewUserStore(dataSourceName)
 	}
-	logrus.WithFields(storageField).Info("Use storage")
+	log.Info("Use storage", storageField)
+	log.Info("Use storage", storageField)
 	return store
 }
